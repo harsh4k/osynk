@@ -47,8 +47,16 @@ function LocalCursor({ mousePosRef }: { mousePosRef: React.MutableRefObject<THRE
 
 function SceneInteraction({ mousePosRef }: { mousePosRef: React.MutableRefObject<THREE.Vector3 | null> }) {
   const addForce = useGameStore((state) => state.addForce);
-  const gameActive = useGameStore((state) => state.gameActive);
+  const hitAt = useGameStore((state) => state.hitAt);
+  const setPlayfield = useGameStore((state) => state.setPlayfield);
   const { camera, gl } = useThree();
+  const viewportWidth = useThree((state) => state.viewport.width);
+  const viewportHeight = useThree((state) => state.viewport.height);
+
+  // Keep spawns inside what this screen can actually show.
+  useEffect(() => {
+    setPlayfield({ halfWidth: viewportWidth / 2, halfHeight: viewportHeight / 2 });
+  }, [viewportWidth, viewportHeight, setPlayfield]);
 
   useEffect(() => {
     const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
@@ -66,35 +74,42 @@ function SceneInteraction({ mousePosRef }: { mousePosRef: React.MutableRefObject
       return target;
     };
 
+    // Judge at the event's own timestamp so main-thread delay doesn't count against the player.
+    const tap = (pos: THREE.Vector3, timeStamp: number) => {
+      const point = { x: pos.x, y: pos.y, z: pos.z };
+      hitAt(point, timeStamp);
+      addForce(point, 'attractor');
+    };
+
     const handlePointerMove = (e: PointerEvent) => {
       updateMousePos(e.clientX, e.clientY);
     };
 
+    // Listen on the canvas so clicks on HUD buttons never count as taps.
     const handlePointerDown = (e: PointerEvent) => {
-      const pos = updateMousePos(e.clientX, e.clientY);
-      addForce({ x: pos.x, y: pos.y, z: pos.z }, 'attractor');
+      tap(updateMousePos(e.clientX, e.clientY), e.timeStamp);
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.code === 'KeyZ' || e.code === 'KeyX' || e.code === 'Space') && mousePosRef.current) {
-        addForce({ x: mousePosRef.current.x, y: mousePosRef.current.y, z: mousePosRef.current.z }, 'attractor');
-      }
+      if (e.repeat || !mousePosRef.current) return;
+      if (e.code === 'KeyZ' || e.code === 'KeyX' || e.code === 'Space') tap(mousePosRef.current, e.timeStamp);
     };
 
     const handleContextMenu = (e: Event) => e.preventDefault();
 
+    const canvas = gl.domElement;
     window.addEventListener('pointermove', handlePointerMove);
-    window.addEventListener('pointerdown', handlePointerDown);
+    canvas.addEventListener('pointerdown', handlePointerDown);
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('contextmenu', handleContextMenu);
 
     return () => {
       window.removeEventListener('pointermove', handlePointerMove);
-      window.removeEventListener('pointerdown', handlePointerDown);
+      canvas.removeEventListener('pointerdown', handlePointerDown);
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('contextmenu', handleContextMenu);
     };
-  }, [camera, gl, addForce, gameActive, mousePosRef]);
+  }, [camera, gl, addForce, hitAt, mousePosRef]);
 
   return null;
 }

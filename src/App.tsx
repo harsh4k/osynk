@@ -22,6 +22,7 @@ export default function App() {
   const togglePause = useGameStore((state) => state.togglePause);
   const endGame = useGameStore((state) => state.endGame);
   const maxCombo = useGameStore((state) => state.maxCombo);
+  const health = useGameStore((state) => state.health);
 
   const [settingsOpen, setSettingsOpen] = React.useState(false);
 
@@ -42,7 +43,7 @@ export default function App() {
       <CosmicCanvas />
       
       {/* UI Overlay */}
-      <div className="absolute top-0 left-0 w-full h-full p-8 pointer-events-none flex flex-col justify-between z-10">
+      <div className="absolute top-0 left-0 w-full h-full p-4 sm:p-8 pointer-events-none flex flex-col justify-between z-10">
         
         {/* Fail Overlay */}
         <AnimatePresence>
@@ -166,6 +167,21 @@ export default function App() {
                   <Trophy size={12} className="text-yellow-500" />
                   <span>Max Combo: {maxCombo}</span>
                 </div>
+                {difficulty !== 'PRACTICE' && (
+                  <div
+                    role="progressbar"
+                    aria-label="Health"
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={Math.round(health * 100)}
+                    className="mt-3 h-1.5 w-48 rounded-full bg-white/10 overflow-hidden"
+                  >
+                    <div
+                      className={`h-full rounded-full transition-[width,background-color] duration-200 ${health > 0.3 ? 'bg-white' : 'bg-red-500'}`}
+                      style={{ width: `${health * 100}%` }}
+                    />
+                  </div>
+                )}
               </motion.div>
             )}
           </AnimatePresence>
@@ -227,7 +243,7 @@ export default function App() {
           </AnimatePresence>
         </div>
 
-        <div className="flex justify-between items-end min-h-[160px]">
+        <div className={`flex justify-between items-end ${gameActive ? 'min-h-[160px]' : ''}`}>
           <div className="flex items-center gap-6">
             {myColor && (
               <div className="flex items-center gap-3 bg-zinc-900/50 backdrop-blur-md px-4 py-2 rounded-full border border-white/5">
