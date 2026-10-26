@@ -100,8 +100,6 @@ describe('hitting targets', () => {
   it('only counts a target once', () => {
     let { target, now } = firstTarget();
     now = run(now, now + target.duration);
-    // Keep only this target: a newer one spawned on top of it would turn the second tap into an early miss.
-    useGameStore.setState({ targets: store().targets.filter((t) => t.id === target.id) });
     store().hitAt(target.position, now);
     store().hitAt(target.position, now);
     expect(store().combo).toBe(1);

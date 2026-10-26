@@ -14,7 +14,7 @@ import {
   hitWindow,
   pointsForAccuracy,
   randomSliderEnd,
-  randomSpawnPoint,
+  pickSpawnPoint,
   timingAccuracy,
 } from '../utils/gameplay';
 
@@ -257,7 +257,8 @@ export const useGameStore = create<GameState>((set, get) => ({
       let lastSpawnAt = state.lastSpawnAt;
       if (gameTime - lastSpawnAt >= config.spawnRate) {
         const type = Math.random() > 0.7 ? 'slider' : 'circle';
-        const position = randomSpawnPoint(state.playfield);
+        const live = kept.filter((t) => !t.hit && !t.missed).map((t) => t.position);
+        const position = pickSpawnPoint(state.playfield, live);
         kept.push({
           id: newId(),
           position,
