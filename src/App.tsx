@@ -269,12 +269,17 @@ export default function App() {
           </AnimatePresence>
           
           {!gameActive && (
-            <div className="flex flex-col items-end gap-1 opacity-40 hover:opacity-100 transition-opacity">
-              <div className="text-right text-[10px] font-mono text-zinc-500 uppercase tracking-[0.3em]">
-                Powered by AI Studio
-              </div>
-              <div className="h-0.5 w-12 bg-gradient-to-r from-transparent to-zinc-800" />
-            </div>
+            <a
+              href="https://github.com/harsh4k/osynk"
+              target="_blank"
+              rel="noreferrer"
+              className="pointer-events-auto flex flex-col items-end gap-1 rounded opacity-40 hover:opacity-100 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white/60 transition-opacity"
+            >
+              <span className="text-right text-[10px] font-mono text-zinc-500 uppercase tracking-[0.3em]">
+                Source on GitHub
+              </span>
+              <span className="h-0.5 w-12 bg-gradient-to-r from-transparent to-zinc-800" />
+            </a>
           )}
         </div>
 
