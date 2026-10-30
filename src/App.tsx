@@ -5,8 +5,10 @@
 
 import React, { useEffect } from 'react';
 import { CosmicCanvas } from './components/CosmicCanvas';
-import { useGameStore, DifficultyMode } from './store/useGameStore';
-import { Play, Trophy, Hash, Settings, LogOut, Pause, RefreshCw } from 'lucide-react';
+import { useGameStore, DifficultyMode, DIFFICULTY_CONFIG, getGameTime } from './store/useGameStore';
+import { Play, Trophy, Settings, LogOut, Pause, RefreshCw, Volume2, VolumeX } from 'lucide-react';
+import { isMuted, scheduleTrack, setMuted, startTrack, unlockAudio } from './audio/engine';
+import { useGameAudio } from './audio/useGameAudio';
 import { motion, AnimatePresence } from 'motion/react';
 
 export default function App() {
@@ -25,11 +27,50 @@ export default function App() {
   const health = useGameStore((state) => state.health);
 
   const [settingsOpen, setSettingsOpen] = React.useState(false);
+  const [muted, setMutedState] = React.useState(isMuted);
+
+  useGameAudio();
 
   useEffect(() => {
-    const interval = setInterval(updateGame, 16); // 60fps update
+    const interval = setInterval(() => {
+      updateGame();
+      const s = useGameStore.getState();
+      if (s.gameActive && !s.isPaused && !s.showFailScreen) scheduleTrack(getGameTime());
+    }, 16); // 60fps update
     return () => clearInterval(interval);
   }, [updateGame]);
+
+  const toggleMute = React.useCallback(() => {
+    const next = !isMuted();
+    setMuted(next);
+    setMutedState(next);
+  }, []);
+
+  // Runs inside the click handler: browsers only allow audio to start from a user gesture.
+  const begin = (mode: DifficultyMode) => {
+    startGame(mode);
+    unlockAudio();
+    startTrack(DIFFICULTY_CONFIG[mode].tempo.bpm);
+  };
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.code === 'KeyM') toggleMute();
+      if (e.code === 'Escape') togglePause();
+    };
+    // Leaving the tab stalls the game loop, so pause instead of letting circles expire.
+    const onVisibility = () => {
+      const s = useGameStore.getState();
+      if (document.hidden && s.gameActive && !s.isPaused && !s.showFailScreen) s.togglePause();
+    };
+    window.addEventListener('keydown', onKey);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [toggleMute, togglePause]);
 
   const difficulties: { id: DifficultyMode; label: string; color: string; desc: string }[] = [
     { id: 'EASY', label: 'Easy', color: 'from-green-400 to-emerald-500', desc: 'Slow circles, big windows' },
@@ -45,6 +86,48 @@ export default function App() {
       {/* UI Overlay */}
       <div className="absolute top-0 left-0 w-full h-full p-4 sm:p-8 pointer-events-none flex flex-col justify-between z-10">
         
+        {/* Pause Overlay */}
+        <AnimatePresence>
+          {gameActive && isPaused && !showFailScreen && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="pause-title"
+              className="absolute inset-0 bg-zinc-950/50 backdrop-blur-sm flex items-center justify-center pointer-events-auto z-40"
+            >
+              <div className="bg-zinc-900/90 px-10 py-10 rounded-[2rem] border border-white/10 shadow-2xl text-center space-y-6">
+                <div className="space-y-2">
+                  <h2 id="pause-title" className="text-5xl font-black italic uppercase tracking-tighter font-display">Paused</h2>
+                  <p className="text-zinc-400 font-mono text-xs tracking-[0.2em] uppercase">Press Esc to resume</p>
+                </div>
+                <div className="flex flex-col gap-3">
+                  <button
+                    autoFocus
+                    onClick={togglePause}
+                    className="flex items-center justify-center gap-3 w-56 h-14 bg-white text-black rounded-2xl font-black text-lg uppercase italic hover:bg-zinc-200 active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white transition-all"
+                  >
+                    <Play size={20} fill="currentColor" aria-hidden />
+                    Resume
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSettingsOpen(false);
+                      endGame();
+                    }}
+                    className="flex items-center justify-center gap-3 w-56 h-12 bg-zinc-800 text-white rounded-2xl font-bold text-sm uppercase tracking-widest hover:bg-zinc-700 active:bg-zinc-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white transition-all"
+                  >
+                    <LogOut size={16} aria-hidden />
+                    Exit to menu
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Fail Overlay */}
         <AnimatePresence>
           {showFailScreen && (
@@ -66,7 +149,7 @@ export default function App() {
 
                 <div className="flex flex-col gap-3">
                   <button 
-                    onClick={() => startGame(difficulty)}
+                    onClick={() => begin(difficulty)}
                     className="flex items-center justify-center gap-3 w-64 h-16 bg-white text-black rounded-2xl font-black text-xl uppercase italic hover:scale-105 active:scale-95 transition-all shadow-[0_0_20px_rgba(255,255,255,0.2)]"
                   >
                     <RefreshCw size={24} />
@@ -133,6 +216,14 @@ export default function App() {
                         >
                           {isPaused ? <Play size={16} fill="currentColor" /> : <Pause size={16} fill="currentColor" />}
                           <span>{isPaused ? 'Resume' : 'Pause'}</span>
+                        </button>
+                        <button
+                          onClick={toggleMute}
+                          aria-pressed={muted}
+                          className="flex items-center gap-3 px-4 py-2 hover:bg-white/5 active:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/60 rounded-xl transition-colors text-sm font-medium"
+                        >
+                          {muted ? <VolumeX size={16} aria-hidden /> : <Volume2 size={16} aria-hidden />}
+                          <span>Mute sound</span>
                         </button>
                         <hr className="border-white/5 mx-2" />
                         <button
@@ -209,7 +300,7 @@ export default function App() {
                       key={diff.id}
                       whileHover={{ x: 8, backgroundColor: 'rgba(255,255,255,0.08)' }}
                       whileTap={{ scale: 0.98 }}
-                      onClick={() => startGame(diff.id)}
+                      onClick={() => begin(diff.id)}
                       className="group relative flex items-center p-4 bg-white/5 rounded-2xl border border-white/5 transition-all text-left"
                     >
                       <div className={`w-1 h-8 rounded-full bg-gradient-to-b ${diff.color} mr-4 shrink-0 shadow-[0_0_15px_rgba(255,255,255,0.1)]`} />
@@ -236,6 +327,11 @@ export default function App() {
                   <div className="flex items-center gap-2">
                     <span className="bg-zinc-800 px-1.5 py-0.5 rounded text-zinc-400 italic">Click</span>
                     <span>Hit</span>
+                  </div>
+                  <div className="w-1 h-1 rounded-full bg-zinc-800" />
+                  <div className="flex items-center gap-2">
+                    <span className="bg-zinc-800 px-1.5 py-0.5 rounded text-zinc-400">M</span>
+                    <span>Sound</span>
                   </div>
                 </div>
               </motion.div>

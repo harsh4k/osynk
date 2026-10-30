@@ -90,7 +90,15 @@ function SceneInteraction({ mousePosRef }: { mousePosRef: React.MutableRefObject
       tap(updateMousePos(e.clientX, e.clientY), e.timeStamp);
     };
 
+    // During live play Space is a tap key, so stop it from also clicking whatever button has focus.
+    // Paused and on the fail screen, Space activates buttons as usual.
+    const blockSpaceDefault = (e: KeyboardEvent) => {
+      const s = useGameStore.getState();
+      if (e.code === 'Space' && s.gameActive && !s.isPaused && !s.showFailScreen) e.preventDefault();
+    };
+
     const handleKeyDown = (e: KeyboardEvent) => {
+      blockSpaceDefault(e);
       if (e.repeat || !mousePosRef.current) return;
       if (e.code === 'KeyZ' || e.code === 'KeyX' || e.code === 'Space') tap(mousePosRef.current, e.timeStamp);
     };
@@ -101,12 +109,14 @@ function SceneInteraction({ mousePosRef }: { mousePosRef: React.MutableRefObject
     window.addEventListener('pointermove', handlePointerMove);
     canvas.addEventListener('pointerdown', handlePointerDown);
     window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', blockSpaceDefault);
     window.addEventListener('contextmenu', handleContextMenu);
 
     return () => {
       window.removeEventListener('pointermove', handlePointerMove);
       canvas.removeEventListener('pointerdown', handlePointerDown);
       window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', blockSpaceDefault);
       window.removeEventListener('contextmenu', handleContextMenu);
     };
   }, [camera, gl, addForce, hitAt, mousePosRef]);
