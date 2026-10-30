@@ -17,6 +17,7 @@ import {
   pickSpawnPoint,
   timingAccuracy,
 } from '../utils/gameplay';
+import { Tempo, firstHitTime, targetIntervalMs } from '../utils/rhythm';
 
 export type { Vector3 } from '../utils/gameplay';
 
@@ -44,6 +45,11 @@ export interface Target {
   sliderPath?: Vector3[];
 }
 
+/** The most recent hit or miss. `seq` increases on every judgement so listeners can spot new ones. */
+export type Judgement =
+  | { seq: number; kind: 'hit'; points: 300 | 100 | 50 }
+  | { seq: number; kind: 'miss' };
+
 interface GameState {
   myId: string;
   myColor: string;
@@ -62,8 +68,10 @@ interface GameState {
   gameTime: number;
   /** Wall-clock timestamp of the previous tick, or null before the first tick of a run. */
   lastTick: number | null;
-  lastSpawnAt: number;
+  /** Game time of the next target's timing point. Always on the beat grid. */
+  nextHitAt: number;
   playfield: Playfield;
+  lastJudgement: Judgement | null;
   addForce: (position: Vector3, type: 'attractor' | 'repulsor', now?: number) => void;
   updateGame: (now?: number) => void;
   hitAt: (point: Vector3, now?: number) => void;
@@ -79,16 +87,20 @@ const COLORS = [
   '#CC33FF', '#FFFF33', '#FF3333', '#3333FF'
 ];
 
-export const DIFFICULTY_CONFIG: Record<DifficultyMode, { spawnRate: number; duration: number; missPenalty: number }> = {
-  EASY: { spawnRate: 1500, duration: 2000, missPenalty: 0.1 },
-  NORMAL: { spawnRate: 800, duration: 1200, missPenalty: 0.15 },
-  INSANE: { spawnRate: 400, duration: 700, missPenalty: 0.2 },
-  PRACTICE: { spawnRate: 1000, duration: 1500, missPenalty: 0 },
+/**
+ * Every target's timing point lands on a beat of the generated track, so `tempo` sets the pace:
+ * Easy one target every 1.33 s, Normal every 0.8 s, Insane every 0.4 s, Practice every 1 s.
+ */
+export const DIFFICULTY_CONFIG: Record<DifficultyMode, { tempo: Tempo; duration: number; missPenalty: number }> = {
+  EASY: { tempo: { bpm: 90, beatsPerTarget: 2 }, duration: 2000, missPenalty: 0.1 },
+  NORMAL: { tempo: { bpm: 150, beatsPerTarget: 2 }, duration: 1200, missPenalty: 0.15 },
+  INSANE: { tempo: { bpm: 150, beatsPerTarget: 1 }, duration: 700, missPenalty: 0.2 },
+  PRACTICE: { tempo: { bpm: 120, beatsPerTarget: 2 }, duration: 1500, missPenalty: 0 },
 };
 
 /** How long a missed or hit target stays in the list (for fade-out) after its timing point. */
 const TARGET_LINGER_MS = 400;
-/** Gap before the first target of a run. */
+/** Minimum gap before the first target appears. */
 const LEAD_IN_MS = 600;
 /** Longest step the game clock takes in one tick, so a stalled tab doesn't miss everything at once. */
 const MAX_TICK_MS = 100;
@@ -97,20 +109,23 @@ const FORCE_LIFETIME_MS = 500;
 
 const newId = () => Math.random().toString(36).substring(2, 9);
 
+const nextSeq = (state: GameState) => (state.lastJudgement?.seq ?? 0) + 1;
+
 /**
  * Apply `count` misses: drain health, break the combo (except in Practice), fail at zero health.
  * Returns the state patch.
  */
 function applyMisses(state: GameState, count: number): Partial<GameState> {
   const isPractice = state.difficulty === 'PRACTICE';
+  const lastJudgement: Judgement = { seq: nextSeq(state), kind: 'miss' };
   let health = state.health - DIFFICULTY_CONFIG[state.difficulty].missPenalty * count;
   // Repeated decimal subtraction leaves values like 1e-16; treat those as empty.
   if (health < 1e-6) health = 0;
 
   if (!isPractice && health === 0) {
-    return { health: 0, combo: 0, showFailScreen: true, targets: [] };
+    return { health: 0, combo: 0, showFailScreen: true, targets: [], lastJudgement };
   }
-  return { health, combo: isPractice ? state.combo : 0 };
+  return { health, combo: isPractice ? state.combo : 0, lastJudgement };
 }
 
 /** Current game time, interpolated past the last tick so input is judged precisely. */
@@ -134,8 +149,9 @@ export const useGameStore = create<GameState>((set, get) => ({
   difficulty: 'NORMAL',
   gameTime: 0,
   lastTick: null,
-  lastSpawnAt: 0,
+  nextHitAt: 0,
   playfield: DEFAULT_PLAYFIELD,
+  lastJudgement: null,
 
   setDifficulty: (mode) => set({ difficulty: mode }),
 
@@ -162,7 +178,8 @@ export const useGameStore = create<GameState>((set, get) => ({
       forceFields: {},
       gameTime: 0,
       lastTick: null,
-      lastSpawnAt: LEAD_IN_MS - DIFFICULTY_CONFIG[mode].spawnRate,
+      nextHitAt: firstHitTime(DIFFICULTY_CONFIG[mode].tempo, DIFFICULTY_CONFIG[mode].duration, LEAD_IN_MS),
+      lastJudgement: null,
     });
   },
 
@@ -210,6 +227,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         combo: newCombo,
         maxCombo: Math.max(state.maxCombo, newCombo),
         health: Math.min(1, state.health + healthGainForPoints(points)),
+        lastJudgement: { seq: nextSeq(state), kind: 'hit', points },
       };
     });
   },
@@ -254,8 +272,11 @@ export const useGameStore = create<GameState>((set, get) => ({
         kept.push(t);
       }
 
-      let lastSpawnAt = state.lastSpawnAt;
-      if (gameTime - lastSpawnAt >= config.spawnRate) {
+      // Spawn each target exactly `duration` before its timing point, so the approach ring
+      // closes on the beat. (A tick never exceeds MAX_TICK_MS, below every target interval,
+      // so at most one target is due per tick.)
+      let nextHitAt = state.nextHitAt;
+      if (gameTime >= nextHitAt - config.duration) {
         const type = Math.random() > 0.7 ? 'slider' : 'circle';
         const live = kept.filter((t) => !t.hit && !t.missed).map((t) => t.position);
         const position = pickSpawnPoint(state.playfield, live);
@@ -263,24 +284,23 @@ export const useGameStore = create<GameState>((set, get) => ({
           id: newId(),
           position,
           type,
-          startTime: gameTime,
+          startTime: nextHitAt - config.duration,
           duration: config.duration,
           hit: false,
           missed: false,
           sliderPath: type === 'slider' ? [position, randomSliderEnd(position, state.playfield)] : undefined,
         });
-        // Advance on a fixed grid so tick jitter doesn't stretch the rhythm.
-        lastSpawnAt += config.spawnRate;
+        nextHitAt += targetIntervalMs(config.tempo);
         changed = true;
       }
 
       const targets = changed ? kept : state.targets;
 
       if (newMisses === 0) {
-        return { forceFields, targets, gameTime, lastTick: now, lastSpawnAt };
+        return { forceFields, targets, gameTime, lastTick: now, nextHitAt };
       }
 
-      return { forceFields, targets, gameTime, lastTick: now, lastSpawnAt, ...applyMisses(state, newMisses) };
+      return { forceFields, targets, gameTime, lastTick: now, nextHitAt, ...applyMisses(state, newMisses) };
     });
   }
 }));
