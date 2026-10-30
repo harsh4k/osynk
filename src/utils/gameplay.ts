@@ -54,6 +54,27 @@ export function randomSpawnPoint(field: Playfield, random: () => number = Math.r
   };
 }
 
+/** Minimum centre distance between a new target and any live one, so circles never stack. */
+export const MIN_SPAWN_SEPARATION = CIRCLE_RADIUS * 2 + 0.4;
+
+/**
+ * A random spawn point that keeps clear of the given live positions. Gives up after a few tries
+ * (only possible on a tiny screen crowded with targets) and returns the last candidate.
+ */
+export function pickSpawnPoint(
+  field: Playfield,
+  avoid: readonly Vector3[],
+  random: () => number = Math.random,
+): Vector3 {
+  let point = randomSpawnPoint(field, random);
+  for (let i = 0; i < 20; i++) {
+    const clear = avoid.every((p) => (p.x - point.x) ** 2 + (p.y - point.y) ** 2 >= MIN_SPAWN_SEPARATION ** 2);
+    if (clear) break;
+    point = randomSpawnPoint(field, random);
+  }
+  return point;
+}
+
 /** A slider end point a short random distance from its start, clamped inside the spawn bounds. */
 export function randomSliderEnd(start: Vector3, field: Playfield, random: () => number = Math.random): Vector3 {
   const b = spawnBounds(field);

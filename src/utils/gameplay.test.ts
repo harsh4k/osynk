@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CIRCLE_RADIUS, findTargetAt, hitWindow, pointsForAccuracy, spawnBounds, timingAccuracy } from './gameplay';
+import { CIRCLE_RADIUS, MIN_SPAWN_SEPARATION, findTargetAt, hitWindow, pickSpawnPoint, pointsForAccuracy, spawnBounds, timingAccuracy } from './gameplay';
 
 const target = (id: string, x: number, startTime: number, extra = {}) => ({
   id, position: { x, y: 0, z: 0 }, startTime, hit: false, missed: false, ...extra,
@@ -38,6 +38,19 @@ describe('timing', () => {
     expect(hitWindow(600, 1000)).toBe('inside');
     expect(hitWindow(1050, 1000)).toBe('inside');
     expect(hitWindow(1051, 1000)).toBe('late');
+  });
+});
+
+describe('pickSpawnPoint', () => {
+  it('never places a new target on top of a live one', () => {
+    const field = { halfWidth: 13, halfHeight: 8 };
+    for (let run = 0; run < 500; run++) {
+      const live = [0, 1, 2].map(() => pickSpawnPoint(field, []));
+      const p = pickSpawnPoint(field, live);
+      for (const q of live) {
+        expect(Math.hypot(p.x - q.x, p.y - q.y)).toBeGreaterThanOrEqual(MIN_SPAWN_SEPARATION);
+      }
+    }
   });
 });
 
