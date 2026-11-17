@@ -9,6 +9,7 @@ import { useGameStore, DifficultyMode, DIFFICULTY_CONFIG, getGameTime } from './
 import { Play, Trophy, Settings, LogOut, Pause, RefreshCw, Volume2, VolumeX } from 'lucide-react';
 import { isMuted, scheduleTrack, setMuted, startTrack, unlockAudio } from './audio/engine';
 import { useGameAudio } from './audio/useGameAudio';
+import { accuracyFromCounts } from './utils/gameplay';
 import { motion, AnimatePresence } from 'motion/react';
 
 export default function App() {
@@ -25,6 +26,7 @@ export default function App() {
   const endGame = useGameStore((state) => state.endGame);
   const maxCombo = useGameStore((state) => state.maxCombo);
   const health = useGameStore((state) => state.health);
+  const counts = useGameStore((state) => state.counts);
 
   const [settingsOpen, setSettingsOpen] = React.useState(false);
   const [muted, setMutedState] = React.useState(isMuted);
@@ -257,6 +259,9 @@ export default function App() {
                 <div className="flex items-center gap-2 text-zinc-400 font-mono text-xs uppercase tracking-widest mt-1">
                   <Trophy size={12} className="text-yellow-500" />
                   <span>Max Combo: {maxCombo}</span>
+                </div>
+                <div className="text-zinc-400 font-mono text-xs uppercase tracking-widest mt-1 tabular-nums">
+                  Accuracy {(accuracyFromCounts(counts) * 100).toFixed(2)}%
                 </div>
                 {difficulty !== 'PRACTICE' && (
                   <div

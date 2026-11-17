@@ -1,6 +1,6 @@
 import React, { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Line } from '@react-three/drei';
+import { Html, Line } from '@react-three/drei';
 import * as THREE from 'three';
 import { useGameStore, Target, getGameTime } from '../store/useGameStore';
 import { CIRCLE_RADIUS } from '../utils/gameplay';
@@ -14,13 +14,32 @@ export function HitCircles() {
   return (
     <>
       {targets.map((target) => (
-        target.type === 'circle' ? (
-          <HitCircle key={target.id} target={target} color={myColor} />
-        ) : (
-          <Slider key={target.id} target={target} color={myColor} />
-        )
+        <React.Fragment key={target.id}>
+          {(target.hit || target.missed) && <JudgementPopup target={target} />}
+          {target.type === 'circle' ? (
+            <HitCircle target={target} color={myColor} />
+          ) : (
+            <Slider target={target} color={myColor} />
+          )}
+        </React.Fragment>
       ))}
     </>
+  );
+}
+
+function JudgementPopup({ target }: { target: Target }) {
+  const isPaused = useGameStore((state) => state.isPaused);
+  const color = target.missed ? 'text-red-500' : target.points === 300 ? 'text-sky-300'
+    : target.points === 100 ? 'text-green-400' : 'text-amber-400';
+
+  return (
+    <Html center position={[target.position.x, target.position.y, target.position.z]}
+      zIndexRange={[10, 0]} style={{ pointerEvents: 'none' }}>
+      <span aria-hidden className={`judgement-popup font-display font-bold text-2xl select-none ${color}`}
+        style={{ animationPlayState: isPaused ? 'paused' : 'running' }}>
+        {target.missed ? 'MISS' : target.points}
+      </span>
+    </Html>
   );
 }
 

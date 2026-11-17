@@ -26,6 +26,66 @@ function firstTarget(now = 0) {
 
 beforeEach(() => start('NORMAL'));
 
+describe('judgement counts', () => {
+  it.each([
+    [1, 300, 'great'],
+    [0.8, 100, 'good'],
+    [0.65, 50, 'meh'],
+  ] as const)('records a %s timing hit as %i points', (accuracy, points, grade) => {
+    let { target, now } = firstTarget();
+    const previousCounts = store().counts;
+    now = run(now, now + target.duration * accuracy - 16);
+    store().hitAt(target.position, now + 16);
+    store().hitAt(target.position, now + 16);
+
+    expect(store().counts).toEqual({ great: 0, good: 0, meh: 0, miss: 0, [grade]: 1 });
+    expect(store().targets.find((t) => t.id === target.id)).toMatchObject({ hit: true, points });
+    expect(previousCounts).toEqual({ great: 0, good: 0, meh: 0, miss: 0 });
+    expect(target.hit).toBe(false);
+    expect(target.points).toBeUndefined();
+  });
+
+  it('counts an early tap once even after the target expires', () => {
+    const { target, now } = firstTarget();
+    store().hitAt(target.position, now);
+    store().hitAt(target.position, now);
+    expect(store().counts).toEqual({ great: 0, good: 0, meh: 0, miss: 1 });
+    run(now, now + target.duration + 100);
+    expect(store().counts.miss).toBe(1);
+  });
+
+  it('counts an expired target once without mutating previous counts', () => {
+    const { target, now } = firstTarget();
+    const previousCounts = store().counts;
+    run(now, now + target.duration + 100);
+    expect(store().counts).toEqual({ great: 0, good: 0, meh: 0, miss: 1 });
+    run(now + target.duration + 100, now + target.duration + 200);
+    expect(store().counts.miss).toBe(1);
+    expect(previousCounts.miss).toBe(0);
+  });
+
+  it('counts the miss that fails the run', () => {
+    const { target, now } = firstTarget();
+    useGameStore.setState({ health: DIFFICULTY_CONFIG.NORMAL.missPenalty });
+    store().hitAt(target.position, now);
+    expect(store().showFailScreen).toBe(true);
+    expect(store().counts.miss).toBe(1);
+  });
+
+  it('counts every target when multiple targets expire in one tick', () => {
+    const { target, now } = firstTarget();
+    useGameStore.setState({ targets: [target, { ...target, id: 'second-expired' }] });
+    run(now, now + target.duration + 100);
+    expect(store().counts).toEqual({ great: 0, good: 0, meh: 0, miss: 2 });
+  });
+
+  it('resets all counts on startGame', () => {
+    useGameStore.setState({ counts: { great: 2, good: 3, meh: 4, miss: 5 } });
+    store().startGame('PRACTICE');
+    expect(store().counts).toEqual({ great: 0, good: 0, meh: 0, miss: 0 });
+  });
+});
+
 describe('missing targets', () => {
   it('does not end the run on a single miss', () => {
     const { target, now } = firstTarget();

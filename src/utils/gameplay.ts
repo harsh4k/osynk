@@ -7,6 +7,14 @@
 
 export type Vector3 = { x: number; y: number; z: number };
 
+export type JudgementCounts = { great: number; good: number; meh: number; miss: number };
+
+/** Weighted accuracy across all judgements; an unjudged run starts at 100%. */
+export function accuracyFromCounts({ great, good, meh, miss }: JudgementCounts): number {
+  const total = great + good + meh + miss;
+  return total === 0 ? 1 : (300 * great + 100 * good + 50 * meh) / (300 * total);
+}
+
 /** Half extents of the visible play area on the z = 0 plane, in world units. */
 export interface Playfield {
   halfWidth: number;

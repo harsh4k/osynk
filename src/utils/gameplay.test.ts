@@ -1,8 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { CIRCLE_RADIUS, MIN_SPAWN_SEPARATION, findTargetAt, hitWindow, pickSpawnPoint, pointsForAccuracy, spawnBounds, timingAccuracy } from './gameplay';
+import { CIRCLE_RADIUS, MIN_SPAWN_SEPARATION, accuracyFromCounts, findTargetAt, hitWindow, pickSpawnPoint, pointsForAccuracy, spawnBounds, timingAccuracy } from './gameplay';
 
 const target = (id: string, x: number, startTime: number, extra = {}) => ({
   id, position: { x, y: 0, z: 0 }, startTime, hit: false, missed: false, ...extra,
+});
+
+describe('accuracyFromCounts', () => {
+  it.each([
+    ['empty', { great: 0, good: 0, meh: 0, miss: 0 }, 1],
+    ['all 300', { great: 4, good: 0, meh: 0, miss: 0 }, 1],
+    ['mixed', { great: 2, good: 1, meh: 1, miss: 1 }, 0.5],
+    ['all misses', { great: 0, good: 0, meh: 0, miss: 4 }, 0],
+  ] as const)('returns weighted accuracy for %s judgements', (_name, counts, expected) => {
+    expect(accuracyFromCounts(counts)).toBeCloseTo(expected);
+  });
 });
 
 describe('findTargetAt', () => {
