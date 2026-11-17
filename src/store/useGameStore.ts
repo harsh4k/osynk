@@ -7,6 +7,7 @@ import { create } from 'zustand';
 import {
   DEFAULT_PLAYFIELD,
   LATE_WINDOW_MS,
+  JudgementCounts,
   Playfield,
   Vector3,
   findTargetAt,
@@ -41,6 +42,7 @@ export interface Target {
   /** Ms from appearing to the perfect hit moment. */
   duration: number;
   hit: boolean;
+  points?: 300 | 100 | 50;
   missed: boolean;
   sliderPath?: Vector3[];
 }
@@ -58,6 +60,7 @@ interface GameState {
   score: number;
   combo: number;
   maxCombo: number;
+  counts: JudgementCounts;
   /** 0..1. The run fails when it reaches 0, except in Practice. */
   health: number;
   gameActive: boolean;
@@ -116,6 +119,7 @@ const nextSeq = (state: GameState) => (state.lastJudgement?.seq ?? 0) + 1;
  * Returns the state patch.
  */
 function applyMisses(state: GameState, count: number): Partial<GameState> {
+  const counts = { ...state.counts, miss: state.counts.miss + count };
   const isPractice = state.difficulty === 'PRACTICE';
   const lastJudgement: Judgement = { seq: nextSeq(state), kind: 'miss' };
   let health = state.health - DIFFICULTY_CONFIG[state.difficulty].missPenalty * count;
@@ -123,9 +127,9 @@ function applyMisses(state: GameState, count: number): Partial<GameState> {
   if (health < 1e-6) health = 0;
 
   if (!isPractice && health === 0) {
-    return { health: 0, combo: 0, showFailScreen: true, targets: [], lastJudgement };
+    return { health: 0, combo: 0, showFailScreen: true, targets: [], lastJudgement, counts };
   }
-  return { health, combo: isPractice ? state.combo : 0, lastJudgement };
+  return { health, combo: isPractice ? state.combo : 0, lastJudgement, counts };
 }
 
 /** Current game time, interpolated past the last tick so input is judged precisely. */
@@ -142,6 +146,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   score: 0,
   combo: 0,
   maxCombo: 0,
+  counts: { great: 0, good: 0, meh: 0, miss: 0 },
   health: 1,
   gameActive: false,
   isPaused: false,
@@ -170,6 +175,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       score: 0,
       combo: 0,
       maxCombo: 0,
+      counts: { great: 0, good: 0, meh: 0, miss: 0 },
       health: 1,
       targets: [],
       gameActive: true,
@@ -219,10 +225,12 @@ export const useGameStore = create<GameState>((set, get) => ({
       }
 
       const points = pointsForAccuracy(timingAccuracy(age, target.duration));
+      const grade = points === 300 ? 'great' : points === 100 ? 'good' : 'meh';
       const newCombo = state.combo + 1;
 
       return {
-        targets: state.targets.map((t) => (t.id === target.id ? { ...t, hit: true } : t)),
+        targets: state.targets.map((t) => (t.id === target.id ? { ...t, hit: true, points } : t)),
+        counts: { ...state.counts, [grade]: state.counts[grade] + 1 },
         score: state.score + points * newCombo,
         combo: newCombo,
         maxCombo: Math.max(state.maxCombo, newCombo),

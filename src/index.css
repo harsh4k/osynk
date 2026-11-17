@@ -6,3 +6,22 @@
   --font-display: "Audiowide", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 }
+
+.judgement-popup {
+  display: block;
+  animation: judgement-fade 400ms ease-out forwards;
+}
+
+@keyframes judgement-fade {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(-8px); }
+}
+
+@keyframes judgement-fade-reduced {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .judgement-popup { animation-name: judgement-fade-reduced; }
+}
