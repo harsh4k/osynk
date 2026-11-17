@@ -9,6 +9,19 @@ export type Vector3 = { x: number; y: number; z: number };
 
 export type JudgementCounts = { great: number; good: number; meh: number; miss: number };
 
+export const RUN_LENGTH_MS = 90_000;
+
+/** Lingering labels are already judged; only live targets delay completion. */
+export function isRunOver(
+  mode: string,
+  gameTime: number,
+  nextHitAt: number,
+  targets: readonly { hit: boolean; missed: boolean }[],
+): boolean {
+  return mode !== 'PRACTICE' && gameTime > RUN_LENGTH_MS && nextHitAt > RUN_LENGTH_MS
+    && targets.every((target) => target.hit || target.missed);
+}
+
 /** Weighted accuracy across all judgements; an unjudged run starts at 100%. */
 export function accuracyFromCounts({ great, good, meh, miss }: JudgementCounts): number {
   const total = great + good + meh + miss;
