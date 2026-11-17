@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { DIFFICULTY_CONFIG, DifficultyMode, useGameStore } from './useGameStore';
 import { spawnBounds } from '../utils/gameplay';
+import { beatMs, targetIntervalMs } from '../utils/rhythm';
 
 const store = () => useGameStore.getState();
 
@@ -91,6 +92,16 @@ describe('hitting targets', () => {
     expect(store().targets.find((t) => t.id === target.id)?.hit).toBe(true);
   });
 
+  it('records a judgement for each hit and miss', () => {
+    let { target, now } = firstTarget();
+    now = run(now, now + target.duration);
+    store().hitAt(target.position, now);
+    expect(store().lastJudgement).toMatchObject({ kind: 'hit', points: 300, seq: 1 });
+    run(now, now + 3000);
+    expect(store().lastJudgement).toMatchObject({ kind: 'miss' });
+    expect(store().lastJudgement!.seq).toBeGreaterThan(1);
+  });
+
   it('ignores taps outside the circle', () => {
     const { target, now } = firstTarget();
     store().hitAt({ x: target.position.x + 1, y: target.position.y, z: 0 }, now);
@@ -144,6 +155,25 @@ describe('pause', () => {
 });
 
 describe('spawning', () => {
+  it('lands every timing point on the beat, one target interval apart', () => {
+    for (const mode of ['EASY', 'NORMAL', 'INSANE', 'PRACTICE'] as const) {
+      start(mode);
+      const { tempo } = DIFFICULTY_CONFIG[mode];
+      const beat = beatMs(tempo.bpm);
+      const hits = new Map<string, number>();
+      for (let now = 0; hits.size < 12; ) {
+        useGameStore.setState({ health: 1 }); // keep the run alive; misses are expected here
+        store().updateGame((now += 16));
+        for (const t of store().targets) hits.set(t.id, t.startTime + t.duration);
+      }
+      const times = [...hits.values()];
+      for (const [i, time] of times.entries()) {
+        expect(Math.abs(time / beat - Math.round(time / beat))).toBeLessThan(1e-6);
+        if (i > 0) expect(time - times[i - 1]).toBeCloseTo(targetIntervalMs(tempo));
+      }
+    }
+  });
+
   it('caps the spread on very wide screens', () => {
     const b = spawnBounds({ halfWidth: 20.5, halfHeight: 11.5 });
     expect(b.halfWidth).toBeLessThanOrEqual(9);

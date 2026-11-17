@@ -29,11 +29,18 @@ npm run preview    # serve dist/ locally
 - `src/components/ForceFields.tsx` — click ripple effects
 - `src/store/useGameStore.ts` — game loop, spawning, judging, scoring
 - `src/utils/gameplay.ts` — pure game rules (hit windows, scoring, spawn bounds)
+- `src/utils/rhythm.ts` — beat-grid math shared by spawning and music
+- `src/audio/synth.ts` — the generated track and sound effects (Web Audio nodes, no files)
+- `src/audio/engine.ts` — AudioContext, beat scheduling against the game clock, mute
+- `src/audio/useGameAudio.ts` — plays effects from store judgements, follows pause/fail/exit
 
 ## Conventions
 - Game rules (timing windows, scoring, health, spawning) live in the store or pure functions in
   `src/utils/`, never in components, so they can be unit tested without WebGL.
 - Use the game clock, never raw `Date.now()`, for anything that must stop while paused.
+- Every target's timing point lands on a beat (`DIFFICULTY_CONFIG[mode].tempo`). The game clock is
+  the master; the audio engine anchors the beat grid to it and re-anchors on drift or resume.
+- The AudioContext is only created inside a user gesture (`unlockAudio()` in a click/key handler).
 - Never mutate store state in place; always return new objects from `set`.
 - Spawn positions must stay inside the visible play field for the current aspect ratio.
 - UI: Tailwind utilities with the theme tokens in `src/index.css`. Every control needs hover,
@@ -49,7 +56,7 @@ browser at desktop (1440x900) and phone (390x844) sizes.
 ## Roadmap
 1. Done: core gameplay fixes (health instead of instant fail, pausable clock, Z/X hits, on-screen spawns)
 2. Done: remove AI Studio leftovers and unused server/AI dependencies, README, LICENSE
-3. Music generated in the browser with Web Audio (no audio files, no new dependency), beat-synced spawning, hit sounds
+3. Done: music generated in the browser with Web Audio, beat-synced spawning, hit/miss sounds, mute
 4. Judgement feedback, health bar, accuracy, results screen, local high scores
 5. Design and accessibility polish, performance (bundle size, render churn)
 6. CI (typecheck, test, build) on every PR
