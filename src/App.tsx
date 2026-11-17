@@ -5,11 +5,14 @@
 
 import React, { useEffect } from 'react';
 import { CosmicCanvas } from './components/CosmicCanvas';
+import { ResultsScreen } from './components/ResultsScreen';
+import { RunProgress } from './components/RunProgress';
 import { useGameStore, DifficultyMode, DIFFICULTY_CONFIG, getGameTime } from './store/useGameStore';
-import { Play, Trophy, Settings, LogOut, Pause, RefreshCw, Volume2, VolumeX } from 'lucide-react';
+import { Play, Trophy, Settings, LogOut, Pause, Volume2, VolumeX } from 'lucide-react';
 import { isMuted, scheduleTrack, setMuted, startTrack, unlockAudio } from './audio/engine';
 import { useGameAudio } from './audio/useGameAudio';
 import { accuracyFromCounts } from './utils/gameplay';
+import { loadBests } from './utils/highScores';
 import { motion, AnimatePresence } from 'motion/react';
 
 export default function App() {
@@ -20,6 +23,8 @@ export default function App() {
   const gameActive = useGameStore((state) => state.gameActive);
   const isPaused = useGameStore((state) => state.isPaused);
   const showFailScreen = useGameStore((state) => state.showFailScreen);
+  const showResults = useGameStore((state) => state.showResults);
+  const lastRun = useGameStore((state) => state.lastRun);
   const difficulty = useGameStore((state) => state.difficulty);
   const startGame = useGameStore((state) => state.startGame);
   const togglePause = useGameStore((state) => state.togglePause);
@@ -30,6 +35,7 @@ export default function App() {
 
   const [settingsOpen, setSettingsOpen] = React.useState(false);
   const [muted, setMutedState] = React.useState(isMuted);
+  const bests = React.useMemo(() => gameActive ? {} : loadBests(), [gameActive]);
 
   useGameAudio();
 
@@ -37,7 +43,7 @@ export default function App() {
     const interval = setInterval(() => {
       updateGame();
       const s = useGameStore.getState();
-      if (s.gameActive && !s.isPaused && !s.showFailScreen) scheduleTrack(getGameTime());
+      if (s.gameActive && !s.isPaused && !s.showFailScreen && !s.showResults) scheduleTrack(getGameTime());
     }, 16); // 60fps update
     return () => clearInterval(interval);
   }, [updateGame]);
@@ -64,7 +70,7 @@ export default function App() {
     // Leaving the tab stalls the game loop, so pause instead of letting circles expire.
     const onVisibility = () => {
       const s = useGameStore.getState();
-      if (document.hidden && s.gameActive && !s.isPaused && !s.showFailScreen) s.togglePause();
+      if (document.hidden && s.gameActive && !s.isPaused && !s.showFailScreen && !s.showResults) s.togglePause();
     };
     window.addEventListener('keydown', onKey);
     document.addEventListener('visibilitychange', onVisibility);
@@ -90,7 +96,7 @@ export default function App() {
         
         {/* Pause Overlay */}
         <AnimatePresence>
-          {gameActive && isPaused && !showFailScreen && (
+          {gameActive && isPaused && !showFailScreen && !showResults && (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -130,46 +136,11 @@ export default function App() {
           )}
         </AnimatePresence>
 
-        {/* Fail Overlay */}
-        <AnimatePresence>
-          {showFailScreen && (
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="absolute inset-0 bg-red-950/40 backdrop-blur-md flex items-center justify-center pointer-events-auto z-50"
-            >
-              <motion.div 
-                initial={{ scale: 0.8, y: 20 }}
-                animate={{ scale: 1, y: 0 }}
-                className="bg-zinc-900 p-12 rounded-[3rem] border-2 border-red-500/20 shadow-[0_0_50px_rgba(239,68,68,0.2)] text-center space-y-8"
-              >
-                <div className="space-y-2">
-                  <h2 className="text-7xl font-black italic uppercase text-red-500 tracking-tighter font-display">FAILED</h2>
-                  <p className="text-zinc-500 font-mono text-sm tracking-[0.2em]">STAY FOCUSED, TRY AGAIN</p>
-                </div>
+        {(showResults || showFailScreen) && lastRun && (
+          <ResultsScreen result={lastRun} onRetry={() => begin(difficulty)} onMenu={() => { setSettingsOpen(false); endGame(); }} />
+        )}
 
-                <div className="flex flex-col gap-3">
-                  <button 
-                    onClick={() => begin(difficulty)}
-                    className="flex items-center justify-center gap-3 w-64 h-16 bg-white text-black rounded-2xl font-black text-xl uppercase italic hover:scale-105 active:scale-95 transition-all shadow-[0_0_20px_rgba(255,255,255,0.2)]"
-                  >
-                    <RefreshCw size={24} />
-                    Retry Now
-                  </button>
-                  <button 
-                    onClick={endGame}
-                    className="flex items-center justify-center gap-3 w-64 h-14 bg-zinc-800 text-white rounded-2xl font-bold text-sm uppercase tracking-widest hover:bg-zinc-700 transition-all"
-                  >
-                    Back to Menu
-                  </button>
-                </div>
-              </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        <div className="flex justify-between items-start">
+        <div inert={showResults || showFailScreen} className="flex justify-between items-start">
           <div className="flex flex-col gap-4">
             <AnimatePresence>
               {!gameActive && (
@@ -264,6 +235,7 @@ export default function App() {
                   Accuracy {(accuracyFromCounts(counts) * 100).toFixed(2)}%
                 </div>
                 {difficulty !== 'PRACTICE' && (
+                  <>
                   <div
                     role="progressbar"
                     aria-label="Health"
@@ -277,13 +249,15 @@ export default function App() {
                       style={{ width: `${health * 100}%` }}
                     />
                   </div>
+                  <RunProgress />
+                  </>
                 )}
               </motion.div>
             )}
           </AnimatePresence>
         </div>
 
-        <div className="flex flex-col items-center justify-center flex-1">
+        <div inert={showResults || showFailScreen} className="flex flex-col items-center justify-center flex-1">
           <AnimatePresence>
             {!gameActive && (
               <motion.div 
@@ -300,24 +274,30 @@ export default function App() {
                 </div>
 
                 <div className="flex flex-col gap-3 w-full">
-                  {difficulties.map((diff) => (
-                    <motion.button
-                      key={diff.id}
-                      whileHover={{ x: 8, backgroundColor: 'rgba(255,255,255,0.08)' }}
-                      whileTap={{ scale: 0.98 }}
-                      onClick={() => begin(diff.id)}
-                      className="group relative flex items-center p-4 bg-white/5 rounded-2xl border border-white/5 transition-all text-left"
-                    >
-                      <div className={`w-1 h-8 rounded-full bg-gradient-to-b ${diff.color} mr-4 shrink-0 shadow-[0_0_15px_rgba(255,255,255,0.1)]`} />
-                      <div className="flex-1">
-                        <div className="flex justify-between items-baseline">
-                          <span className="text-lg font-black uppercase italic tracking-tighter leading-none font-display">{diff.label}</span>
-                          <span className="text-[9px] font-mono text-zinc-600 uppercase tracking-widest font-bold">{diff.id}</span>
+                  {difficulties.map((diff) => {
+                    const best = diff.id === 'PRACTICE' ? undefined : bests[diff.id];
+                    return (
+                      <motion.button
+                        key={diff.id}
+                        whileHover={{ x: 8, backgroundColor: 'rgba(255,255,255,0.08)' }}
+                        whileTap={{ scale: 0.98 }}
+                        onClick={() => begin(diff.id)}
+                        className="group relative flex items-center p-4 bg-white/5 rounded-2xl border border-white/5 transition-all text-left"
+                      >
+                        <div className={`w-1 h-8 rounded-full bg-gradient-to-b ${diff.color} mr-4 shrink-0 shadow-[0_0_15px_rgba(255,255,255,0.1)]`} />
+                        <div className="flex-1">
+                          <div className="flex justify-between items-baseline">
+                            <span className="text-lg font-black uppercase italic tracking-tighter leading-none font-display">{diff.label}</span>
+                            <span className="text-[9px] font-mono text-zinc-600 uppercase tracking-widest font-bold">{diff.id}</span>
+                          </div>
+                          <p className="text-zinc-500 text-[10px] mt-1 line-clamp-1">{diff.desc}</p>
+                          {best && (
+                            <p className="text-zinc-400 text-[10px] mt-1 font-mono tabular-nums">Best {best.score.toLocaleString()}</p>
+                          )}
                         </div>
-                        <p className="text-zinc-500 text-[10px] mt-1 line-clamp-1">{diff.desc}</p>
-                      </div>
-                    </motion.button>
-                  ))}
+                      </motion.button>
+                    );
+                  })}
                 </div>
 
                 <div className="mt-8 flex items-center gap-6 text-zinc-700 text-[9px] uppercase tracking-[0.2em] font-bold">
@@ -344,7 +324,7 @@ export default function App() {
           </AnimatePresence>
         </div>
 
-        <div className={`flex justify-between items-end ${gameActive ? 'min-h-[160px]' : ''}`}>
+        <div inert={showResults || showFailScreen} className={`flex justify-between items-end ${gameActive ? 'min-h-[160px]' : ''}`}>
           <div className="flex items-center gap-6">
             {myColor && (
               <div className="flex items-center gap-3 bg-zinc-900/50 backdrop-blur-md px-4 py-2 rounded-full border border-white/5">

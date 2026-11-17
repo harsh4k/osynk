@@ -28,7 +28,7 @@ export function useGameAudio() {
       if (state.showFailScreen && !prev.showFailScreen) {
         stopTrack();
         playFail();
-      } else if (!state.gameActive && prev.gameActive) {
+      } else if ((state.showResults && !prev.showResults) || (!state.gameActive && prev.gameActive)) {
         stopTrack();
       }
     });

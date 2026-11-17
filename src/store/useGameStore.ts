@@ -7,9 +7,11 @@ import { create } from 'zustand';
 import {
   DEFAULT_PLAYFIELD,
   LATE_WINDOW_MS,
+  RUN_LENGTH_MS,
   JudgementCounts,
   Playfield,
   Vector3,
+  isRunOver,
   findTargetAt,
   healthGainForPoints,
   hitWindow,
@@ -19,8 +21,10 @@ import {
   timingAccuracy,
 } from '../utils/gameplay';
 import { Tempo, firstHitTime, targetIntervalMs } from '../utils/rhythm';
+import { finishRun, type LastRun } from './runResult';
 
 export type { Vector3 } from '../utils/gameplay';
+export type { LastRun } from './runResult';
 
 export interface ForceField {
   id: string;
@@ -66,6 +70,8 @@ interface GameState {
   gameActive: boolean;
   isPaused: boolean;
   showFailScreen: boolean;
+  showResults: boolean;
+  lastRun: LastRun | null;
   difficulty: DifficultyMode;
   /** Ms of unpaused play since the run started. All target timing uses this clock. */
   gameTime: number;
@@ -103,10 +109,13 @@ export const DIFFICULTY_CONFIG: Record<DifficultyMode, { tempo: Tempo; duration:
 
 /** How long a missed or hit target stays in the list (for fade-out) after its timing point. */
 const TARGET_LINGER_MS = 400;
+
 /** Minimum gap before the first target appears. */
 const LEAD_IN_MS = 600;
+
 /** Longest step the game clock takes in one tick, so a stalled tab doesn't miss everything at once. */
 const MAX_TICK_MS = 100;
+
 /** Lifetime of a click ripple, in wall-clock ms. */
 const FORCE_LIFETIME_MS = 500;
 
@@ -115,8 +124,8 @@ const newId = () => Math.random().toString(36).substring(2, 9);
 const nextSeq = (state: GameState) => (state.lastJudgement?.seq ?? 0) + 1;
 
 /**
- * Apply `count` misses: drain health, break the combo (except in Practice), fail at zero health.
- * Returns the state patch.
+ * Apply `count` misses: drain health, break the combo (except in Practice), fail at zero
+ * health. Returns the state patch.
  */
 function applyMisses(state: GameState, count: number): Partial<GameState> {
   const counts = { ...state.counts, miss: state.counts.miss + count };
@@ -125,16 +134,15 @@ function applyMisses(state: GameState, count: number): Partial<GameState> {
   let health = state.health - DIFFICULTY_CONFIG[state.difficulty].missPenalty * count;
   // Repeated decimal subtraction leaves values like 1e-16; treat those as empty.
   if (health < 1e-6) health = 0;
-
   if (!isPractice && health === 0) {
-    return { health: 0, combo: 0, showFailScreen: true, targets: [], lastJudgement, counts };
+    return { ...finishRun({ ...state, counts }, 'failed'), health: 0, combo: 0, lastJudgement, counts };
   }
   return { health, combo: isPractice ? state.combo : 0, lastJudgement, counts };
 }
 
 /** Current game time, interpolated past the last tick so input is judged precisely. */
 function gameTimeAt(state: GameState, now: number): number {
-  if (state.isPaused || state.lastTick === null) return state.gameTime;
+  if (!state.gameActive || state.isPaused || state.showFailScreen || state.showResults || state.lastTick === null) return state.gameTime;
   return state.gameTime + Math.min(MAX_TICK_MS, Math.max(0, now - state.lastTick));
 }
 
@@ -151,6 +159,8 @@ export const useGameStore = create<GameState>((set, get) => ({
   gameActive: false,
   isPaused: false,
   showFailScreen: false,
+  showResults: false,
+  lastRun: null,
   difficulty: 'NORMAL',
   gameTime: 0,
   lastTick: null,
@@ -163,11 +173,11 @@ export const useGameStore = create<GameState>((set, get) => ({
   setPlayfield: (field) => set({ playfield: field }),
 
   togglePause: () => set((state) => {
-    if (!state.gameActive || state.showFailScreen) return state;
+    if (!state.gameActive || state.showFailScreen || state.showResults) return state;
     return { isPaused: !state.isPaused };
   }),
 
-  endGame: () => set({ gameActive: false, isPaused: false, showFailScreen: false, targets: [] }),
+  endGame: () => set({ gameActive: false, isPaused: false, showFailScreen: false, showResults: false, targets: [], lastRun: null }),
 
   startGame: (mode) => {
     set({
@@ -181,6 +191,8 @@ export const useGameStore = create<GameState>((set, get) => ({
       gameActive: true,
       isPaused: false,
       showFailScreen: false,
+      showResults: false,
+      lastRun: null,
       forceFields: {},
       gameTime: 0,
       lastTick: null,
@@ -200,7 +212,6 @@ export const useGameStore = create<GameState>((set, get) => ({
       createdAt: now,
       color: myColor,
     };
-
     set((state) => ({
       forceFields: { ...state.forceFields, [id]: force }
     }));
@@ -208,14 +219,12 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   hitAt: (point, now = performance.now()) => {
     set((state) => {
-      if (!state.gameActive || state.isPaused || state.showFailScreen) return state;
-
+      if (!state.gameActive || state.isPaused || state.showFailScreen || state.showResults) return state;
       const time = gameTimeAt(state, now);
       // Ignore targets whose window has already closed; the next tick marks them missed.
       const live = state.targets.filter((t) => hitWindow(time - t.startTime, t.duration) !== 'late');
       const target = findTargetAt(live, point);
       if (!target) return state;
-
       const age = time - target.startTime;
       if (hitWindow(age, target.duration) === 'early') {
         return {
@@ -223,11 +232,9 @@ export const useGameStore = create<GameState>((set, get) => ({
           ...applyMisses(state, 1),
         };
       }
-
       const points = pointsForAccuracy(timingAccuracy(age, target.duration));
       const grade = points === 300 ? 'great' : points === 100 ? 'good' : 'meh';
       const newCombo = state.combo + 1;
-
       return {
         targets: state.targets.map((t) => (t.id === target.id ? { ...t, hit: true, points } : t)),
         counts: { ...state.counts, [grade]: state.counts[grade] + 1 },
@@ -250,18 +257,14 @@ export const useGameStore = create<GameState>((set, get) => ({
           delete forceFields[id];
         }
       }
-
-      if (!state.gameActive || state.showFailScreen) {
+      if (!state.gameActive || state.showFailScreen || state.showResults) {
         return forceFields === state.forceFields ? state : { forceFields };
       }
-
       if (state.isPaused || state.lastTick === null) {
         return { forceFields, lastTick: now };
       }
-
       const gameTime = state.gameTime + Math.min(MAX_TICK_MS, Math.max(0, now - state.lastTick));
       const config = DIFFICULTY_CONFIG[state.difficulty];
-
       let newMisses = 0;
       let changed = false;
       const kept: Target[] = [];
@@ -279,12 +282,11 @@ export const useGameStore = create<GameState>((set, get) => ({
         }
         kept.push(t);
       }
-
       // Spawn each target exactly `duration` before its timing point, so the approach ring
       // closes on the beat. (A tick never exceeds MAX_TICK_MS, below every target interval,
       // so at most one target is due per tick.)
       let nextHitAt = state.nextHitAt;
-      if (gameTime >= nextHitAt - config.duration) {
+      if (gameTime >= nextHitAt - config.duration && (state.difficulty === 'PRACTICE' || nextHitAt <= RUN_LENGTH_MS)) {
         const type = Math.random() > 0.7 ? 'slider' : 'circle';
         const live = kept.filter((t) => !t.hit && !t.missed).map((t) => t.position);
         const position = pickSpawnPoint(state.playfield, live);
@@ -301,14 +303,14 @@ export const useGameStore = create<GameState>((set, get) => ({
         nextHitAt += targetIntervalMs(config.tempo);
         changed = true;
       }
-
       const targets = changed ? kept : state.targets;
-
-      if (newMisses === 0) {
-        return { forceFields, targets, gameTime, lastTick: now, nextHitAt };
+      const patch = { forceFields, targets, gameTime, lastTick: now, nextHitAt,
+        ...(newMisses > 0 ? applyMisses(state, newMisses) : {}) };
+      const updated = { ...state, ...patch };
+      if (!updated.showFailScreen && isRunOver(updated.difficulty, gameTime, nextHitAt, updated.targets)) {
+        return { ...patch, ...finishRun(updated, 'cleared') };
       }
-
-      return { forceFields, targets, gameTime, lastTick: now, nextHitAt, ...applyMisses(state, newMisses) };
+      return patch;
     });
   }
 }));

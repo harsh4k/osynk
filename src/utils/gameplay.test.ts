@@ -1,8 +1,23 @@
 import { describe, expect, it } from 'vitest';
-import { CIRCLE_RADIUS, MIN_SPAWN_SEPARATION, accuracyFromCounts, findTargetAt, hitWindow, pickSpawnPoint, pointsForAccuracy, spawnBounds, timingAccuracy } from './gameplay';
+import { CIRCLE_RADIUS, MIN_SPAWN_SEPARATION, RUN_LENGTH_MS, accuracyFromCounts, isRunOver, findTargetAt, hitWindow, pickSpawnPoint, pointsForAccuracy, spawnBounds, timingAccuracy } from './gameplay';
 
 const target = (id: string, x: number, startTime: number, extra = {}) => ({
   id, position: { x, y: 0, z: 0 }, startTime, hit: false, missed: false, ...extra,
+});
+
+describe('isRunOver', () => {
+  const live = { hit: false, missed: false };
+  it.each(['EASY', 'NORMAL', 'INSANE'])('ends %s only past the limit with no unjudged targets', (mode) => {
+    expect(isRunOver(mode, RUN_LENGTH_MS, RUN_LENGTH_MS + 800, [])).toBe(false);
+    expect(isRunOver(mode, RUN_LENGTH_MS - 1, RUN_LENGTH_MS + 800, [])).toBe(false);
+    expect(isRunOver(mode, RUN_LENGTH_MS + 1, RUN_LENGTH_MS, [])).toBe(false);
+    expect(isRunOver(mode, RUN_LENGTH_MS + 1, RUN_LENGTH_MS + 800, [live])).toBe(false);
+    expect(isRunOver(mode, RUN_LENGTH_MS + 1, RUN_LENGTH_MS + 800, [{ ...live, hit: true }, { ...live, missed: true }])).toBe(true);
+    expect(isRunOver(mode, RUN_LENGTH_MS + 1, RUN_LENGTH_MS + 800, [])).toBe(true);
+  });
+  it('never ends practice by time', () => {
+    expect(isRunOver('PRACTICE', RUN_LENGTH_MS * 10, RUN_LENGTH_MS * 10, [])).toBe(false);
+  });
 });
 
 describe('accuracyFromCounts', () => {

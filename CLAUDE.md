@@ -23,12 +23,16 @@ npm run preview    # serve dist/ locally
 ```
 
 ## Layout
+- `src/components/RunProgress.tsx` — run-progress line with its own game-clock subscription
+- `src/store/runResult.ts` — run-result type and final score recording
 - `src/App.tsx` — HUD and menus (DOM overlay on top of the canvas)
 - `src/components/CosmicCanvas.tsx` — R3F scene, cursor, input handling
 - `src/components/HitCircles.tsx` — circle and slider rendering
+- `src/components/ResultsScreen.tsx` — clear/fail results, judgement breakdown, retry and menu
 - `src/components/ForceFields.tsx` — click ripple effects
 - `src/store/useGameStore.ts` — game loop, spawning, judging, scoring
 - `src/utils/gameplay.ts` — pure game rules (hit windows, scoring, spawn bounds)
+- `src/utils/highScores.ts` — validated local best scores and storage error handling
 - `src/utils/rhythm.ts` — beat-grid math shared by spawning and music
 - `src/audio/synth.ts` — the generated track and sound effects (Web Audio nodes, no files)
 - `src/audio/engine.ts` — AudioContext, beat scheduling against the game clock, mute
@@ -57,6 +61,6 @@ browser at desktop (1440x900) and phone (390x844) sizes.
 1. Done: core gameplay fixes (health instead of instant fail, pausable clock, Z/X hits, on-screen spawns)
 2. Done: remove AI Studio leftovers and unused server/AI dependencies, README, LICENSE
 3. Done: music generated in the browser with Web Audio, beat-synced spawning, hit/miss sounds, mute
-4. Judgement feedback, health bar, accuracy, results screen, local high scores
+4. Done: judgement feedback, health bar, accuracy, results screen, local high scores
 5. Design and accessibility polish, performance (bundle size, render churn)
 6. Done: CI (typecheck, test, build) on every PR
