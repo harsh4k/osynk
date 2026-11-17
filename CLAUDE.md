@@ -59,4 +59,4 @@ browser at desktop (1440x900) and phone (390x844) sizes.
 3. Done: music generated in the browser with Web Audio, beat-synced spawning, hit/miss sounds, mute
 4. Judgement feedback, health bar, accuracy, results screen, local high scores
 5. Design and accessibility polish, performance (bundle size, render churn)
-6. CI (typecheck, test, build) on every PR
+6. Done: CI (typecheck, test, build) on every PR
