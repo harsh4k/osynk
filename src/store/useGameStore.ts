@@ -174,7 +174,7 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   togglePause: () => set((state) => {
     if (!state.gameActive || state.showFailScreen || state.showResults) return state;
-    return { isPaused: !state.isPaused };
+    return { isPaused: !state.isPaused, lastTick: null };
   }),
 
   endGame: () => set({ gameActive: false, isPaused: false, showFailScreen: false, showResults: false, targets: [], lastRun: null }),
